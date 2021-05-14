@@ -41,23 +41,30 @@ func main() {
 	}
 	for {
 		conn, err := listener.Accept()
-		log.Println("Got new connection", conn.RemoteAddr())
+		log.Println("New connection", conn.RemoteAddr())
 		if err != nil {
 			log.Println("error accepting connection", err)
 			continue
 		}
 		go func() {
+			defer conn.Close()
 			conn2, err := net.Dial("tcp", *remoteAddr)
 			if err != nil {
 				log.Println("error dialing remote addr", err)
 				return
 			}
-			go io.Copy(conn2, conn)
-			io.Copy(conn, conn2)
+			defer conn2.Close()
+			closer := make(chan struct{}, 2)
+			go copy(closer, conn2, conn)
+			go copy(closer, conn, conn2)
+			<-closer
 			log.Println("Connection complete", conn.RemoteAddr())
-			conn2.Close()
-			conn.Close()
 		}()
 	}
+}
+
+func copy(closer chan struct{}, dst io.Writer, src io.Reader) {
+	_, _ = io.Copy(dst, src)
+	closer <- struct{}{} // connection is closed, send signal to stop proxy
 }
 ```
